@@ -192,6 +192,18 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         backend="anthropic",
         supports_prompt_caching=True,
     ),
+
+
+    # AWS Bedrock: Anthropic SDK with Bedrock backend
+    ProviderSpec(
+        name="bedrock",
+        keywords=("bedrock", "aws-bedrock"),
+        env_key="",
+        display_name="AWS Bedrock",
+        backend="bedrock",
+        supports_prompt_caching=True,
+    ),
+
     # OpenAI: SDK default base URL (no override needed)
     ProviderSpec(
         name="openai",
