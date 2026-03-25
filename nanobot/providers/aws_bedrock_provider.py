@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from loguru import logger
+
 from nanobot.providers.anthropic_provider import AnthropicProvider
 from nanobot.providers.base import LLMResponse
 
@@ -96,7 +98,12 @@ class AWSBedrockProvider(AnthropicProvider):
         )
         try:
             response = await self._client.messages.create(**kwargs)
-            return self._parse_response(response)
+            parsed = self._parse_response(response)
+            if parsed.usage:
+                actual_prompt = parsed.usage.get("prompt_tokens", 0)
+                logger.debug(f"Bedrock actual usage: {actual_prompt} prompt tokens, "
+                           f"{parsed.usage.get('completion_tokens', 0)} completion tokens")
+            return parsed
         except Exception as e:
             return LLMResponse(content=f"Error calling LLM: {e}", finish_reason="error")
 
@@ -127,9 +134,50 @@ class AWSBedrockProvider(AnthropicProvider):
                     async for text in stream.text_stream:
                         await on_content_delta(text)
                 response = await stream.get_final_message()
-            return self._parse_response(response)
+            parsed = self._parse_response(response)
+            if parsed.usage:
+                actual_prompt = parsed.usage.get("prompt_tokens", 0)
+                logger.debug(f"Bedrock actual usage: {actual_prompt} prompt tokens, "
+                           f"{parsed.usage.get('completion_tokens', 0)} completion tokens")
+            return parsed
         except Exception as e:
             return LLMResponse(content=f"Error calling LLM: {e}", finish_reason="error")
+
+    def estimate_prompt_tokens(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+    ) -> tuple[int, str]:
+        """Use Anthropic's count_tokens API for accurate token estimation."""
+        try:
+            # Reuse _build_kwargs to get properly formatted params
+            kwargs = self._build_kwargs(
+                messages, tools, model,
+                max_tokens=1024,  # dummy value, not used by count_tokens
+                temperature=0.0,  # dummy value, not used by count_tokens
+                reasoning_effort=None,
+                tool_choice=None,
+                supports_caching=False,  # don't need cache control for counting
+            )
+
+            # Extract only what count_tokens needs
+            count_kwargs = {
+                "model": kwargs["model"],
+                "messages": kwargs["messages"],
+            }
+            if "system" in kwargs:
+                count_kwargs["system"] = kwargs["system"]
+            if "tools" in kwargs:
+                count_kwargs["tools"] = kwargs["tools"]
+
+            result = self._client.messages.count_tokens(**count_kwargs)
+            estimated = result.input_tokens
+            logger.debug(f"Bedrock token estimation: {estimated} tokens (via count_tokens API)")
+            return estimated, "bedrock_count_tokens"
+        except Exception as e:
+            logger.debug(f"Bedrock token counting failed: {e}")
+            return 0, "failed"
 
     def get_default_model(self) -> str:
         return self.default_model
