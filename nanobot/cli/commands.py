@@ -457,6 +457,16 @@ def _make_provider(config: Config):
             default_model=model,
             extra_headers=p.extra_headers if p else None,
         )
+    elif backend == "bedrock":
+        from nanobot.providers.aws_bedrock_provider import AWSBedrockProvider
+        # Region can be specified in config.json providers.bedrock.api_key (as a workaround)
+        # or via AWS_REGION / AWS_DEFAULT_REGION environment variables
+        # Credentials use boto3's standard credential chain
+        provider = AWSBedrockProvider(
+            region_name=p.api_key if (p and p.api_key) else None,
+            default_model=model,
+            extra_headers=p.extra_headers if p else None,
+        )
     else:
         from nanobot.providers.openai_compat_provider import OpenAICompatProvider
 
