@@ -51,6 +51,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+bedrock = [
+    "boto3>=1.42.0",
+]
 wecom = [
     "wecom-aibot-sdk-python>=0.1.5",
 ]
