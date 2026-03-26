@@ -143,7 +143,7 @@ class AWSBedrockProvider(AnthropicProvider):
         except Exception as e:
             return LLMResponse(content=f"Error calling LLM: {e}", finish_reason="error")
 
-    def estimate_prompt_tokens(
+    async def estimate_prompt_tokens(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
@@ -171,7 +171,7 @@ class AWSBedrockProvider(AnthropicProvider):
             if "tools" in kwargs:
                 count_kwargs["tools"] = kwargs["tools"]
 
-            result = self._client.messages.count_tokens(**count_kwargs)
+            result = await self._client.messages.count_tokens(**count_kwargs)
             estimated = result.input_tokens
             logger.debug(f"Bedrock token estimation: {estimated} tokens (via count_tokens API)")
             return estimated, "bedrock_count_tokens"
