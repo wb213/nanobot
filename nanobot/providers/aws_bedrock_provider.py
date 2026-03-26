@@ -64,6 +64,8 @@ class AWSBedrockProvider(AnthropicProvider):
             client_kw["aws_region"] = region
         if extra_headers:
             client_kw["default_headers"] = extra_headers
+        
+        client_kw["timeout"] = 120.0
 
         # boto3 handles all credential resolution automatically
         self._client = AsyncAnthropicBedrock(**client_kw)
