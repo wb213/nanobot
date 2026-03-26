@@ -254,17 +254,25 @@ def trim_history_for_budget(
     return system + old_history + current_turn
 
 
-def estimate_prompt_tokens_chain(
+async def estimate_prompt_tokens_chain(
     provider: Any,
     model: str | None,
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
 ) -> tuple[int, str]:
     """Estimate prompt tokens via provider counter first, then tiktoken fallback."""
+    import asyncio
+    import inspect
+
     provider_counter = getattr(provider, "estimate_prompt_tokens", None)
     if callable(provider_counter):
         try:
-            tokens, source = provider_counter(messages, tools, model)
+            result = provider_counter(messages, tools, model)
+            # Check if result is a coroutine (async method)
+            if inspect.iscoroutine(result) or asyncio.iscoroutine(result):
+                tokens, source = await result
+            else:
+                tokens, source = result
             if isinstance(tokens, (int, float)) and tokens > 0:
                 return int(tokens), str(source or "provider_counter")
         except Exception:
