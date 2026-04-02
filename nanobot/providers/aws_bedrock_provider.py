@@ -263,57 +263,152 @@ class AWSBedrockProvider(LLMProvider):
         logger.warning(f"Unsupported content type: {content_type}, skipping")
         return None
 
-    def _format_bedrock_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Format messages for Bedrock API compatibility.
+    def _convert_messages(
+        self, messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Convert OpenAI format messages to Bedrock format.
 
-        Filters content blocks to only include Bedrock-supported fields and
-        injects cache points when automatic caching is enabled.
-
-        Args:
-            messages: List of messages to format
+        Similar to AnthropicProvider._convert_messages, handles:
+        - role: "tool" -> toolResult content blocks in user messages
+        - tool_calls in assistant messages -> toolUse content blocks
 
         Returns:
-            Messages formatted for Bedrock API
+            List of Bedrock-formatted messages
         """
-        cleaned_messages: list[dict[str, Any]] = []
+        raw: list[dict[str, Any]] = []
 
-        for message in messages:
-            content = message.get("content")
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content")
 
-            # Handle different content types from _sanitize_empty_content
-            if isinstance(content, str):
-                # String content (e.g., "(empty)" or regular text)
-                cleaned_content = [{"text": content}]
-            elif isinstance(content, list):
-                # List of content blocks
-                cleaned_content = []
-                for content_block in content:
-                    if isinstance(content_block, dict):
-                        formatted = self._format_request_message_content(content_block)
-                        if formatted is not None:
-                            cleaned_content.append(formatted)
-                    elif isinstance(content_block, str):
-                        # String item in list
-                        cleaned_content.append({"text": content_block})
-            elif content is None:
-                # None content (assistant with tool_calls only)
-                cleaned_content = []
-            else:
-                # Fallback: convert to string
-                cleaned_content = [{"text": str(content)}]
+            # Skip system messages (handled separately)
+            if role == "system":
+                continue
 
-            # Add message if it has content
-            if cleaned_content:
-                cleaned_messages.append({
-                    "content": cleaned_content,
-                    "role": message["role"]
+            # Tool result messages -> toolResult blocks in user messages
+            if role == "tool":
+                block = self._tool_result_block(msg)
+                if raw and raw[-1]["role"] == "user":
+                    # Append to previous user message
+                    prev_c = raw[-1]["content"]
+                    if isinstance(prev_c, list):
+                        prev_c.append(block)
+                    else:
+                        raw[-1]["content"] = [{"text": prev_c or ""}, block]
+                else:
+                    # Create new user message
+                    raw.append({"role": "user", "content": [block]})
+                continue
+
+            # Assistant messages
+            if role == "assistant":
+                raw.append({"role": "assistant", "content": self._assistant_blocks(msg)})
+                continue
+
+            # User messages
+            if role == "user":
+                raw.append({
+                    "role": "user",
+                    "content": self._convert_user_content(content),
                 })
+                continue
+
+        return raw
+
+    def _tool_result_block(self, msg: dict[str, Any]) -> dict[str, Any]:
+        """Convert OpenAI tool message to Bedrock toolResult block."""
+        content = msg.get("content")
+
+        # Format content as list of blocks
+        if isinstance(content, str):
+            result_content = [{"text": content}]
+        elif isinstance(content, list):
+            result_content = content  # Assume already formatted
+        else:
+            result_content = [{"text": str(content) if content else ""}]
+
+        return {
+            "toolResult": {
+                "toolUseId": msg.get("tool_call_id", ""),
+                "content": result_content,
+            }
+        }
+
+    def _assistant_blocks(self, msg: dict[str, Any]) -> list[dict[str, Any]]:
+        """Convert assistant message to Bedrock content blocks."""
+        blocks: list[dict[str, Any]] = []
+        content = msg.get("content")
+
+        # Text content
+        if isinstance(content, str) and content:
+            blocks.append({"text": content})
+        elif isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    blocks.append(item)
+                else:
+                    blocks.append({"text": str(item)})
+
+        # Tool calls -> toolUse blocks
+        for tc in msg.get("tool_calls") or []:
+            if not isinstance(tc, dict):
+                continue
+            func = tc.get("function", {})
+            args = func.get("arguments", "{}")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+
+            blocks.append({
+                "toolUse": {
+                    "toolUseId": tc.get("id", ""),
+                    "name": func.get("name", ""),
+                    "input": args if isinstance(args, dict) else {},
+                }
+            })
+
+        return blocks or [{"text": ""}]
+
+    def _convert_user_content(self, content: Any) -> list[dict[str, Any]]:
+        """Convert user message content to Bedrock format."""
+        if isinstance(content, str) or content is None:
+            return [{"text": content or "(empty)"}]
+        if not isinstance(content, list):
+            return [{"text": str(content)}]
+
+        result: list[dict[str, Any]] = []
+        for item in content:
+            if not isinstance(item, dict):
+                result.append({"text": str(item)})
+                continue
+            # Pass through - assume already Bedrock-formatted
+            result.append(item)
+        return result or [{"text": "(empty)"}]
+
+    def _format_bedrock_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Format messages for Bedrock API, applying content filtering and caching."""
+        # Convert to Bedrock format
+        bedrock_msgs = self._convert_messages(messages)
+
+        # Filter content blocks to only include Bedrock-supported fields
+        for msg in bedrock_msgs:
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                filtered = []
+                for block in content:
+                    if isinstance(block, dict):
+                        formatted = self._format_request_message_content(block)
+                        if formatted is not None:
+                            filtered.append(formatted)
+                msg["content"] = filtered
 
         # Auto-inject cache point for anthropic models
         if self._cache_strategy == "anthropic":
-            self._inject_cache_point(cleaned_messages)
+            self._inject_cache_point(bedrock_msgs)
 
-        return cleaned_messages
+        return bedrock_msgs
 
     def _format_bedrock_tools(self, tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
         """Format OpenAI-style tools to Bedrock format.
