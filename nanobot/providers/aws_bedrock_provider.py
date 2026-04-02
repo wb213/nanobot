@@ -529,8 +529,11 @@ class AWSBedrockProvider(LLMProvider):
 
         # Add thinking config if reasoning_effort specified
         if reasoning_effort:
-            budget_map = {"low": 1024, "medium": 4096, "high": 8192}
+            budget_map = {"low": 1024, "medium": 4096, "high": max(8192, max_tokens)}
             budget = budget_map.get(reasoning_effort.lower(), 4096)
+            # Ensure max_tokens > budget_tokens
+            request["inferenceConfig"]["maxTokens"] = max(max_tokens, budget + 4096)
+            request["inferenceConfig"]["temperature"] = 1.0
             request["additionalModelRequestFields"] = {
                 "thinking": {
                     "type": "enabled",
