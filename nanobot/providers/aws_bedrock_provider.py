@@ -278,12 +278,29 @@ class AWSBedrockProvider(LLMProvider):
         cleaned_messages: list[dict[str, Any]] = []
 
         for message in messages:
-            cleaned_content: list[dict[str, Any]] = []
+            content = message.get("content")
 
-            for content_block in message.get("content", []):
-                formatted = self._format_request_message_content(content_block)
-                if formatted is not None:
-                    cleaned_content.append(formatted)
+            # Handle different content types from _sanitize_empty_content
+            if isinstance(content, str):
+                # String content (e.g., "(empty)" or regular text)
+                cleaned_content = [{"text": content}]
+            elif isinstance(content, list):
+                # List of content blocks
+                cleaned_content = []
+                for content_block in content:
+                    if isinstance(content_block, dict):
+                        formatted = self._format_request_message_content(content_block)
+                        if formatted is not None:
+                            cleaned_content.append(formatted)
+                    elif isinstance(content_block, str):
+                        # String item in list
+                        cleaned_content.append({"text": content_block})
+            elif content is None:
+                # None content (assistant with tool_calls only)
+                cleaned_content = []
+            else:
+                # Fallback: convert to string
+                cleaned_content = [{"text": str(content)}]
 
             # Add message if it has content
             if cleaned_content:
@@ -314,11 +331,14 @@ class AWSBedrockProvider(LLMProvider):
         for tool in tools:
             if tool.get("type") == "function":
                 func = tool["function"]
+                schema = func.get("parameters", {"type": "object", "properties": {}})
+
+                # Bedrock requires inputSchema to be wrapped in {"json": <schema>}
                 bedrock_tools.append({
                     "toolSpec": {
                         "name": func["name"],
                         "description": func.get("description", ""),
-                        "inputSchema": func.get("parameters", {"type": "object", "properties": {}})
+                        "inputSchema": {"json": schema}
                     }
                 })
 
