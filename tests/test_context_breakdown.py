@@ -52,7 +52,7 @@ class _FakeSkills:
     def load_skills_for_context(self, skill_names: list[str]) -> str:
         return self._always_content
 
-    def build_skills_summary(self, exclude: set[str] | None = None) -> str:
+    def build_skills_summary(self) -> str:
         return self._skills_summary
 
 

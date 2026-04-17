@@ -499,7 +499,7 @@ def calculate_context_breakdown(
     else:
         parts["always_skills"] = 0
 
-    skills_summary = context_builder.skills.build_skills_summary(exclude=set(always_skills))
+    skills_summary = context_builder.skills.build_skills_summary()
     parts["skills_summary"] = len(skills_summary) if skills_summary else 0
 
     entries = context_builder.memory.read_unprocessed_history(
