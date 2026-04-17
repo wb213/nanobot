@@ -74,17 +74,42 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
             search_usage_text = usage.format()
     except Exception:
         pass  # Never let usage fetch break /status
+
+    # Calculate context breakdown (best-effort, never blocks the response)
+    context_breakdown_text: str | None = None
+    try:
+        from nanobot.utils.helpers import calculate_context_breakdown, format_context_breakdown
+        breakdown = calculate_context_breakdown(
+            context_builder=loop.context,
+            session=session,
+            loop=loop,
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+        )
+        context_breakdown_text = format_context_breakdown(breakdown, loop._last_usage)
+    except Exception as e:
+        from loguru import logger
+        logger.warning("Failed to calculate context breakdown: {}", e)
+
+    # Build base status content
+    status_text = build_status_content(
+        version=__version__, model=loop.model,
+        start_time=loop._start_time, last_usage=loop._last_usage,
+        context_window_tokens=loop.context_window_tokens,
+        session_msg_count=len(session.get_history(max_messages=0)),
+        context_tokens_estimate=ctx_est,
+        search_usage_text=search_usage_text,
+    )
+
+    # Append context breakdown if available
+    final_content = status_text
+    if context_breakdown_text:
+        final_content = f"{status_text}\n\n{context_breakdown_text}"
+
     return OutboundMessage(
         channel=ctx.msg.channel,
         chat_id=ctx.msg.chat_id,
-        content=build_status_content(
-            version=__version__, model=loop.model,
-            start_time=loop._start_time, last_usage=loop._last_usage,
-            context_window_tokens=loop.context_window_tokens,
-            session_msg_count=len(session.get_history(max_messages=0)),
-            context_tokens_estimate=ctx_est,
-            search_usage_text=search_usage_text,
-        ),
+        content=final_content,
         metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
     )
 
