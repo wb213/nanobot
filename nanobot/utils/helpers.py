@@ -421,16 +421,16 @@ def build_status_content(
     ctx_pct = int((context_tokens_estimate / ctx_total) * 100) if ctx_total > 0 else 0
     ctx_used_str = f"{context_tokens_estimate // 1000}k" if context_tokens_estimate >= 1000 else str(context_tokens_estimate)
     ctx_total_str = f"{ctx_total // 1000}k" if ctx_total > 0 else "n/a"
-    token_line = f"\U0001f4ca Tokens: {last_in} in / {last_out} out"
+    token_line = f"📊 Tokens: {last_in} in / {last_out} out"
     if cached and last_in:
         token_line += f" ({cached * 100 // last_in}% cached)"
     lines = [
-        f"\U0001f408 nanobot v{version}",
-        f"\U0001f9e0 Model: {model}",
+        f"🐈 nanobot v{version}",
+        f"🧠 Model: {model}",
         token_line,
-        f"\U0001f4da Context: {ctx_used_str}/{ctx_total_str} ({ctx_pct}%)",
-        f"\U0001f4ac Session: {session_msg_count} messages",
-        f"\u23f1 Uptime: {uptime}",
+        f"📚 Context: {ctx_used_str}/{ctx_total_str} ({ctx_pct}%)",
+        f"💬 Session: {session_msg_count} messages",
+        f"⏱ Uptime: {uptime}",
     ]
     if search_usage_text:
         lines.append(search_usage_text)
@@ -530,6 +530,16 @@ def calculate_context_breakdown(
     tools = loop.tools.get_definitions()
     parts["tools_definitions"] = len(json.dumps(tools, ensure_ascii=False))
 
+    # Extract tool names for display
+    tool_names = []
+    for tool in tools:
+        if "function" in tool and isinstance(tool["function"], dict):
+            name = tool["function"].get("name")
+        else:
+            name = tool.get("name")
+        if name:
+            tool_names.append(name)
+
     # 4. Runtime Context
     runtime_ctx = context_builder._build_runtime_context(
         channel=channel,
@@ -558,6 +568,7 @@ def calculate_context_breakdown(
         "tools_stats": {
             "total_tools": len(tools),
         },
+        "tool_names": tool_names,
     }
 
 
@@ -587,24 +598,24 @@ def format_context_breakdown(
         """Calculate percentage of total."""
         return int((chars / total) * 100) if total > 0 else 0
 
-    lines = ["\U0001f4ca Context Breakdown (Last Call)", ""]
+    lines = ["📊 Context Breakdown (Last Call)", ""]
 
     # System Prompt section
     sys_total = parts["system_prompt_total"]
     lines.append(f"System Prompt: {_format_size(sys_total)} chars ({_calc_pct(sys_total)}%)")
-    lines.append(f"  \u251c\u2500 Identity: {_format_size(parts['identity'])} ({_calc_pct(parts['identity'])}%)")
-    lines.append(f"  \u251c\u2500 Bootstrap: {_format_size(parts['bootstrap'])} ({_calc_pct(parts['bootstrap'])}%)")
-    lines.append(f"  \u251c\u2500 Memory: {_format_size(parts['memory'])} ({_calc_pct(parts['memory'])}%)")
-    lines.append(f"  \u251c\u2500 Always Skills: {_format_size(parts['always_skills'])} ({_calc_pct(parts['always_skills'])}%)")
-    lines.append(f"  \u251c\u2500 Skills Summary: {_format_size(parts['skills_summary'])} ({_calc_pct(parts['skills_summary'])}%)")
-    lines.append(f"  \u2514\u2500 Recent History: {_format_size(parts['recent_history'])} ({_calc_pct(parts['recent_history'])}%)")
+    lines.append(f"  ├─ Identity: {_format_size(parts['identity'])} ({_calc_pct(parts['identity'])}%)")
+    lines.append(f"  ├─ Bootstrap: {_format_size(parts['bootstrap'])} ({_calc_pct(parts['bootstrap'])}%)")
+    lines.append(f"  ├─ Memory: {_format_size(parts['memory'])} ({_calc_pct(parts['memory'])}%)")
+    lines.append(f"  ├─ Always Skills: {_format_size(parts['always_skills'])} ({_calc_pct(parts['always_skills'])}%)")
+    lines.append(f"  ├─ Skills Summary: {_format_size(parts['skills_summary'])} ({_calc_pct(parts['skills_summary'])}%)")
+    lines.append(f"  └─ Recent History: {_format_size(parts['recent_history'])} ({_calc_pct(parts['recent_history'])}%)")
     lines.append("")
 
     # History Messages
     hist_chars = parts["history_messages"]
     hist_stats = breakdown["history_stats"]
     lines.append(f"History Messages: {_format_size(hist_chars)} chars ({_calc_pct(hist_chars)}%)")
-    lines.append(f"  \u2514\u2500 {hist_stats['total_messages']} messages "
+    lines.append(f"  └─ {hist_stats['total_messages']} messages "
                  f"({hist_stats['user_messages']} user / {hist_stats['assistant_messages']} assistant)")
     lines.append("")
 
@@ -612,18 +623,22 @@ def format_context_breakdown(
     tools_chars = parts["tools_definitions"]
     tools_stats = breakdown["tools_stats"]
     lines.append(f"Tools Definitions: {_format_size(tools_chars)} chars ({_calc_pct(tools_chars)}%)")
-    lines.append(f"  \u2514\u2500 {tools_stats['total_tools']} tools loaded")
+    tool_names = breakdown.get("tool_names", [])
+    if tool_names:
+        lines.append(f"  └─ {tools_stats['total_tools']} tools: {', '.join(tool_names)}")
+    else:
+        lines.append(f"  └─ {tools_stats['total_tools']} tools loaded")
     lines.append("")
 
     # Runtime Context
     runtime_chars = parts["runtime_context"]
     lines.append(f"Runtime Context: {_format_size(runtime_chars)} chars ({_calc_pct(runtime_chars)}%)")
-    lines.append(f"  \u2514\u2500 Time, channel, chat_id")
+    lines.append(f"  └─ Time, channel, chat_id")
     lines.append("")
 
     # Token Usage
     lines.append("---")
-    lines.append("\U0001f4c8 Token Usage (Last Call)")
+    lines.append("📈 Token Usage (Last Call)")
 
     prompt_tokens = last_usage.get("prompt_tokens", 0)
     completion_tokens = last_usage.get("completion_tokens", 0)
@@ -638,7 +653,7 @@ def format_context_breakdown(
         # Estimate char/token ratio
         if total > 0:
             ratio = total / prompt_tokens
-            lines.append(f"Estimated Ratio: 1 char \u2248 {1/ratio:.2f} tokens")
+            lines.append(f"Estimated Ratio: 1 char ≈ {1/ratio:.2f} tokens")
     else:
         lines.append("No token usage data yet")
 

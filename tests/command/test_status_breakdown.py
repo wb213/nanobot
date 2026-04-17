@@ -236,7 +236,7 @@ async def test_status_shows_message_stats():
 
 @pytest.mark.asyncio
 async def test_status_shows_tools_count():
-    """Test that tools count is displayed."""
+    """Test that tools count and names are displayed."""
     ctx = _make_ctx(
         tools=[
             {"name": "tool1", "description": "Tool 1"},
@@ -247,7 +247,10 @@ async def test_status_shows_tools_count():
 
     out = await cmd_status(ctx)
 
-    assert "3 tools loaded" in out.content
+    assert "3 tools:" in out.content
+    assert "tool1" in out.content
+    assert "tool2" in out.content
+    assert "tool3" in out.content
 
 
 @pytest.mark.asyncio
