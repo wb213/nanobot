@@ -285,7 +285,7 @@ def test_format_context_breakdown_basic():
     assert "17 assistant" in output
 
     # Verify tools stats
-    assert "12 tools loaded" in output
+    assert "12 tools" in output  # May show "12 tools:" or "12 tools loaded" depending on availability
 
     # Verify token usage
     assert "45,231 tokens" in output
